@@ -161,8 +161,6 @@ const getCustomerLifetimeValue = async (req, res) => {
 };
 
 
-
-
 module.exports = {
   getTotalSales,
   getSalesGrowth,
