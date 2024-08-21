@@ -1,6 +1,7 @@
 // controllers/analyticsController.js
 const ShopifyCustomers = require("../models/ShopifyCustomers");
 const ShopifyOrders = require("../models/ShopifyOrders");
+const ShopifyProducts = require('../models/shopifyProducts')
 
 // function to get total sales over time
 const getTotalSales = async (req, res) => {
@@ -20,6 +21,24 @@ const getTotalSales = async (req, res) => {
   }
 };
 
+// Function to get new customers added over time
+const getAllCustomers = async (req, res) => {
+  try {
+    const customers = await ShopifyCustomers.find({});
+    console.log("Customers:", customers);
+
+    // Check the collection directly
+    const db = ShopifyCustomers.db;
+    const collection = db.collection("shopifycustomers"); // Use the actual collection name
+    const count = await collection.countDocuments();
+    console.log("Document count:", count);
+
+    res.status(200).json(customers);
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
 
 // Function to get sales growth rate over time
 const getSalesGrowth = async (req, res) => {
@@ -53,44 +72,26 @@ const getSalesGrowth = async (req, res) => {
 };
 
 
-// Function to get new customers added over time
-const getNewCustomers = async (req, res) => {
-    try {
-        const newCustomersData = await ShopifyCustomers.aggregate([
-            {
-                $group: {
-                    _id: { $dateToString: { format: "%Y-%m", date: "$created_at" } },
-                    count: { $sum: 1 }
-                }
-            },
-            { $sort: { _id: 1 } }
-        ]);
-
-        res.json(newCustomersData);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
 
 // Function to get number of repeat customers
 const getRepeatCustomers = async (req, res) => {
     try {
-        const repeatCustomersData = await ShopifyOrders.aggregate([
-            {
-                $group: {
-                    _id: "$customer_id", // Assuming customer_id is a field in the orders collection
-                    totalPurchases: { $sum: 1 }
-                }
+        const repeatCustomersData = await ShopifyCustomers.aggregate([
+          {
+            $group: {
+              _id: "$customer_id", // Assuming customer_id is a field in the orders collection
+              totalPurchases: { $sum: 1 },
             },
-            {
-                $match: { totalPurchases: { $gt: 1 } } // Filter for repeat customers
+          },
+          {
+            $match: { totalPurchases: { $gt: 1 } }, // Filter for repeat customers
+          },
+          {
+            $group: {
+              _id: null,
+              repeatCustomerCount: { $sum: 1 },
             },
-            {
-                $group: {
-                    _id: null,
-                    repeatCustomerCount: { $sum: 1 }
-                }
-            }
+          },
         ]);
 
         res.json(repeatCustomersData);
@@ -103,13 +104,13 @@ const getRepeatCustomers = async (req, res) => {
 const getGeographicalDistribution = async (req, res) => {
     try {
         const geoData = await ShopifyCustomers.aggregate([
-            {
-                $group: {
-                    _id: "$default_address.city", // Group by city
-                    customerCount: { $sum: 1 }
-                }
+          {
+            $group: {
+              _id: "$default_address.city", // Group by city
+              customerCount: { $sum: 1 },
             },
-            { $sort: { customerCount: -1 } } // Sort by customer count
+          },
+          { $sort: { customerCount: -1 } }, // Sort by customer count
         ]);
 
         res.json(geoData);
@@ -122,36 +123,41 @@ const getGeographicalDistribution = async (req, res) => {
 const getCustomerLifetimeValue = async (req, res) => {
     try {
         // Step 1: Get first purchase date for each customer
-        const firstPurchase = await ShopifyOrders.aggregate([
-            {
-                $group: {
-                    _id: "$customer_id", // Assuming customer_id is a field in the orders collection
-                    firstPurchaseDate: { $min: "$created_at" },
-                    totalSpent: { $sum: "$total_price_set" }
-                }
-            }
+        const firstPurchase = await ShopifyCustomers.aggregate([
+          {
+            $group: {
+              _id: "$customer_id", // Assuming customer_id is a field in the orders collection
+              firstPurchaseDate: { $min: "$created_at" },
+              totalSpent: { $sum: "$total_price_set" },
+            },
+          },
         ]);
 
         // Step 2: Group by cohort (month of first purchase)
-        const cohortData = await ShopifyOrders.aggregate([
-            {
-                $lookup: {
-                    from: "shopifyCustomers", // Join with customers collection
-                    localField: "customer_id",
-                    foreignField: "_id",
-                    as: "customerInfo"
-                }
+        const cohortData = await ShopifyCustomers.aggregate([
+          {
+            $lookup: {
+              from: "shopifyCustomers", // Join with customers collection
+              localField: "customer_id",
+              foreignField: "_id",
+              as: "customerInfo",
             },
-            {
-                $unwind: "$customerInfo"
+          },
+          {
+            $unwind: "$customerInfo",
+          },
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: "%Y-%m",
+                  date: "$customerInfo.created_at",
+                },
+              },
+              totalLifetimeValue: { $sum: "$total_price_set" },
             },
-            {
-                $group: {
-                    _id: { $dateToString: { format: "%Y-%m", date: "$customerInfo.created_at" } },
-                    totalLifetimeValue: { $sum: "$total_price_set" }
-                }
-            },
-            { $sort: { _id: 1 } }
+          },
+          { $sort: { _id: 1 } },
         ]);
 
         res.json(cohortData);
@@ -162,12 +168,13 @@ const getCustomerLifetimeValue = async (req, res) => {
 
 
 module.exports = {
-  getTotalSales,
-  getSalesGrowth,
-  getNewCustomers,
-  getRepeatCustomers,
-  getGeographicalDistribution,
-  getCustomerLifetimeValue,
+  //   getTotalSales,
+  //   getSalesGrowth,
+  //   getNewCustomers,
+  //   getRepeatCustomers,
+  //   getGeographicalDistribution,
+  //   getCustomerLifetimeValue,
   // Export other functions...
+  getAllCustomers,
 };
 
